@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../../data/services/mongo_database.dart';
+import '../../data/services/firebase_service.dart';
 import '../../data/providers/user_provider.dart';
 import '../../data/models/Appointment.dart';
-import 'package:mongo_dart/mongo_dart.dart' as mongo;
 import '../../data/models/Doctor.dart';
 import '../booking/book_appointment_screen.dart';
 
@@ -21,37 +20,16 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
     final user = Provider.of<UserProvider>(context, listen: false).user;
     if (user == null || user.id == null) return [];
     
-    // Find appointments for this patient, sorted by creation time (newest first)
-    final rawAppointments = await MongoDatabase.appointmentCollection.find(
-      mongo.where.eq('patientId', user.id).sortBy('_id', descending: true)
-    ).toList();
-
-    List<Map<String, dynamic>> enrichedList = [];
-
-    for (var apptMap in rawAppointments) {
-      final appt = Appointment.fromMap(apptMap);
-      final doctorMap = await MongoDatabase.doctorCollection.findOne(mongo.where.id(appt.doctorId));
-      
-      Doctor? doctor;
-      if (doctorMap != null) {
-        doctor = Doctor.fromMap(doctorMap);
-      }
-
-      enrichedList.add({
-        'appointment': appt,
-        'doctor': doctor, // Store full object
-        'doctorName': doctor != null ? doctor.username : "Unknown"
-      });
+    try {
+      return await FirebaseService.getEnrichedAppointments(user.id!);
+    } catch (e) {
+      print("Error fetching appointments: $e");
+      return [];
     }
-
-    return enrichedList;
   }
 
-  Future<void> _cancelAppointment(mongo.ObjectId id) async {
-    await MongoDatabase.appointmentCollection.update(
-      mongo.where.id(id),
-      mongo.modify.set('status', 'cancelled')
-    );
+  Future<void> _cancelAppointment(String id) async {
+    await FirebaseService.cancelAppointment(id);
     setState(() {}); // Refresh list
   }
 
@@ -159,7 +137,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
                                      // Navigate to reschedule
                                      if (doctor != null) {
                                          Navigator.push(context, MaterialPageRoute(builder: (_) => 
-                                           BookAppointmentScreen(doctor: doctor, appointmentId: appt.id!.oid)
+                                           BookAppointmentScreen(doctor: doctor, appointmentId: appt.id)
                                          ));
                                      }
                                   },

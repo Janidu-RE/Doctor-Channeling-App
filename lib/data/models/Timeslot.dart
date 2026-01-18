@@ -1,8 +1,6 @@
-import 'package:mongo_dart/mongo_dart.dart';
-
 class Timeslot {
-  ObjectId? id;
-  ObjectId doctorId;
+  String? id;
+  String doctorId;
   DateTime startTime;
   DateTime endTime;
   int capacity;
@@ -21,7 +19,7 @@ class Timeslot {
 
   Map<String, dynamic> toMap() {
     return {
-      '_id': id,
+      'id': id,
       'doctorId': doctorId,
       'startTime': startTime.toIso8601String(),
       'endTime': endTime.toIso8601String(),
@@ -32,8 +30,8 @@ class Timeslot {
 
   factory Timeslot.fromMap(Map<String, dynamic> map) {
     return Timeslot(
-      id: map['_id'] as ObjectId?,
-      doctorId: map['doctorId'] as ObjectId,
+      id: map['id'] ?? map['_id']?.toString(),
+      doctorId: map['doctorId']?.toString() ?? '',
       startTime: DateTime.parse(map['startTime']),
       endTime: DateTime.parse(map['endTime']),
       capacity: map['capacity'] ?? 1,

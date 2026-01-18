@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:mongo_dart/mongo_dart.dart' as mongo;
+import '../../data/services/firebase_service.dart';
+import '../../data/providers/user_provider.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/Doctor.dart';
 import '../../data/models/Appointment.dart';
-import '../../data/services/mongo_database.dart';
-import '../../data/providers/user_provider.dart';
 
 class BookAppointmentScreen extends StatefulWidget {
   final Doctor doctor;
@@ -69,9 +68,7 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
         throw Exception("You must be logged in to book an appointment.");
       }
 
-    if (MongoDatabase.appointmentCollection == null) {
-      throw Exception("Database not connected! Please restart the app.");
-    }
+    // Firestore is cleaner, no explicit connect check needed here usually
     
     if (widget.doctor.id == null) {
        throw Exception("Doctor ID is invalid.");
@@ -95,25 +92,22 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
 
       if (widget.appointmentId != null) {
          // RESCHEDULE MODE: Update existing
-         final id = mongo.ObjectId.fromHexString(widget.appointmentId!);
-         await MongoDatabase.appointmentCollection.update(
-           mongo.where.id(id),
-           mongo.modify.set('date', appointmentDate.toIso8601String())
-                       .set('status', 'pending') // Reset status to pending if it was something else?
-         );
+         await FirebaseService.updateAppointment(widget.appointmentId!, {
+           'date': appointmentDate.toIso8601String(),
+           'status': 'pending'
+         });
          print("Rescheduled to $appointmentDate");
       } else {
          // NEW BOOKING MODE
           final appointment = Appointment(
-            id: mongo.ObjectId(),
+            id: null, // Let Firestore generate ID
             doctorId: widget.doctor.id!, 
             patientId: user.id!,
             date: appointmentDate,
             status: 'pending',
           );
     
-          print("Booking appointment: ${appointment.toMap()}"); // Debug print
-          await MongoDatabase.appointmentCollection.insert(appointment.toMap());
+          await FirebaseService.bookAppointment(appointment);
       }
 
 

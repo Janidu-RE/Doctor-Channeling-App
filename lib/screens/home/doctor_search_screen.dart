@@ -3,9 +3,8 @@ import '../../data/services/mongo_database.dart';
 import '../../data/models/Doctor.dart';
 import '../doctor/doctor_detail_screen.dart';
 
-
 class DoctorSearchScreen extends StatefulWidget {
-  final String? category; // Optional category filter
+  final String? category;
   const DoctorSearchScreen({super.key, this.category});
 
   @override
@@ -13,79 +12,218 @@ class DoctorSearchScreen extends StatefulWidget {
 }
 
 class _DoctorSearchScreenState extends State<DoctorSearchScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  final List<String> _categories = ["All", "General", "Cardiology", "Eye", "Skin", "Neurology", "Pediatric"];
   
+  String _searchQuery = "";
+  String _selectedCategory = "All";
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.category != null && widget.category!.isNotEmpty) {
+      _selectedCategory = widget.category!;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Construct query based on category
+    // Build Filter
     final Map<String, dynamic> filter = {'role': 'doctor'};
-    if (widget.category != null && widget.category!.isNotEmpty && widget.category != "General") {
-      // Simple regex for "contains" or exact match. For now, exact match on speciality is safer if data is clean.
-       filter['speciality'] = widget.category;
+    
+    // Category Filter
+    if (_selectedCategory != "All") {
+      String pattern = _selectedCategory;
+      
+      // Robust mapping for common mismatches (e.g. Chip says "Cardiology", DB says "Cardiologist")
+      switch (_selectedCategory) {
+        case "Cardiology": pattern = "Cardio"; break;
+        case "Dermatology": pattern = "Derma"; break; // matches Dermatologist
+        case "Skin": pattern = "Skin|Derma"; break;
+        case "Eye": pattern = "Eye|Opth"; break; // Ophthalmologist
+        case "Neurology": pattern = "Neuro"; break;
+        case "Pediatric": pattern = "Pediat"; break;
+        case "General": pattern = "General"; break;
+      }
+      
+      filter['speciality'] = {r'$regex': pattern, r'$options': 'i'};
+    }
+
+    // Name Search Filter (Regex)
+    if (_searchQuery.isNotEmpty) {
+      filter['username'] = {r'$regex': _searchQuery, r'$options': 'i'};
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.category ?? "All Doctors")),
-      body: FutureBuilder(
-        future: MongoDatabase.doctorCollection.find(filter).toList(), 
-        builder: (context, AsyncSnapshot snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
-          }
-          
-          final doctorsData = snapshot.data as List;
-          if (doctorsData.isEmpty) {
-            return Center(child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.person_off, size: 60, color: Colors.grey),
-                const SizedBox(height: 10),
-                Text("No ${widget.category ?? ""} Doctors Found", style: const TextStyle(color: Colors.grey)),
-              ],
-            ));
-          }
-    
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: doctorsData.length,
-            itemBuilder: (context, index) {
-              final doc = Doctor.fromMap(doctorsData[index]);
-              return Card(
-                elevation: 2,
-                margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.all(15),
-                  leading: Hero(
-                     tag: 'doctor_list_${doc.id}',
-                     child: Container(
-                       width: 60, height: 60,
-                       decoration: BoxDecoration(
-                         borderRadius: BorderRadius.circular(10),
-                         image: DecorationImage(image: AssetImage(doc.imageUrl), fit: BoxFit.cover),
-                       ),
-                     ),
+      appBar: AppBar(
+        title: const Text("Find Doctors"),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+      ),
+      backgroundColor: Colors.grey[50],
+      body: Column(
+        children: [
+          // Search Bar
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: "Search by doctor name...",
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isNotEmpty 
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        setState(() {
+                          _searchController.clear();
+                          _searchQuery = "";
+                        });
+                      },
+                    ) 
+                  : null,
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
+              ),
+              onChanged: (val) {
+                setState(() {
+                  _searchQuery = val;
+                });
+              },
+            ),
+          ),
+
+          // Category Chips
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: _categories.map((cat) {
+                final isSelected = _selectedCategory == cat;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: FilterChip(
+                    label: Text(cat),
+                    selected: isSelected,
+                    selectedColor: Colors.blue.withOpacity(0.2),
+                    checkmarkColor: Colors.blue,
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.blue : Colors.black,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal
+                    ),
+                    backgroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      side: BorderSide(color: isSelected ? Colors.blue : Colors.transparent)
+                    ),
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedCategory = cat;
+                        } 
+                        // Optional: allow deselecting to go back to All? 
+                        // For now, enforce one selection or clicking 'All'
+                      });
+                    },
                   ),
-                  title: Text("Dr. ${doc.username}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Results List
+          Expanded(
+            child: FutureBuilder(
+              future: MongoDatabase.doctorCollection.find(filter).toList(),
+              builder: (context, AsyncSnapshot snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text("Error: ${snapshot.error}"));
+                }
+
+                final doctorsData = snapshot.data as List;
+                if (doctorsData.isEmpty) {
+                  return Center(child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(doc.speciality, style: const TextStyle(color: Colors.blue)),
-                      const SizedBox(height: 5),
-                      Text("Fee: \$${doc.consultationFee}", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                      Icon(Icons.search_off, size: 60, color: Colors.grey[300]),
+                      const SizedBox(height: 10),
+                      const Text("No doctors found", style: TextStyle(color: Colors.grey, fontSize: 16)),
                     ],
-                  ),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
-                  onTap: () {
-                     Navigator.push(context, MaterialPageRoute(builder: (_) => DoctorDetailScreen(doctor: doc)));
+                  ));
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: doctorsData.length,
+                  itemBuilder: (context, index) {
+                    final doc = Doctor.fromMap(doctorsData[index]);
+                    return Card(
+                      elevation: 0,
+                      color: Colors.white,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(15),
+                        onTap: () {
+                           Navigator.push(context, MaterialPageRoute(builder: (_) => DoctorDetailScreen(doctor: doc)));
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Row(
+                            children: [
+                              Hero(
+                                tag: 'doctor_search_${doc.id}',
+                                child: Container(
+                                  width: 70, height: 70,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    image: DecorationImage(image: AssetImage(doc.imageUrl), fit: BoxFit.cover),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 15),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text("Dr. ${doc.username}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    const SizedBox(height: 4),
+                                    Text(doc.speciality, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w500)),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.star, color: Colors.amber, size: 14),
+                                        Text(" ${doc.rating}  •  ${doc.experience} yrs exp", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                                      ],
+                                    )
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
                   },
-                ),
-              );
-            },
-          );
-        },
+                );
+              },
+            ),
+          )
+        ],
       ),
     );
   }

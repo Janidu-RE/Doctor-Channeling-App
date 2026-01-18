@@ -1,20 +1,37 @@
+import 'package:mongo_dart/mongo_dart.dart';
 
 class User {
-  String user_id;
+  ObjectId? id;
   String username;
   String password;
   String email;
   String contactNo;
 
   User({
-    required this.user_id,
+    this.id,
     required this.username,
     required this.password,
     required this.email,
     required this.contactNo,
   });
 
-  void login(){
+  Map<String, dynamic> toMap() {
+    return {
+      '_id': id,
+      'username': username,
+      'password': password,
+      'email': email,
+      'contactNo': contactNo,
+    };
+  }
 
+  factory User.fromMap(Map<String, dynamic> map) {
+    return User(
+      id: map['_id'] as ObjectId?,
+      username: map['username'] ?? '',
+      password: map['password'] ?? '',
+      email: map['email'] ?? '',
+      contactNo: map['contactNo'] ?? '',
+    );
   }
 }

@@ -1,37 +1,38 @@
-import 'user.dart';
+import 'package:mongo_dart/mongo_dart.dart';
+import 'User.dart';
 
 class Patient extends User {
-  String patient_id;
   DateTime birthday;
   String address;
 
   Patient({
-    required super.user_id,
+    super.id,
     required super.username,
     required super.password,
     required super.email,
     required super.contactNo,
-
-    required this.patient_id,
     required this.birthday,
     required this.address,
   });
 
-  void registerUser() {
+  @override
+  Map<String, dynamic> toMap() {
+    var map = super.toMap();
+    map['birthday'] = birthday.toIso8601String();
+    map['address'] = address;
+    map['role'] = 'patient';
+    return map;
   }
 
-  void updateUser() {
-  }
-
-  void createAppointment() {
-  }
-
-  void modifyAppointment() {
-  }
-
-  void cancelAppointment() {
-  }
-
-  void viewAppointment() {
+  factory Patient.fromMap(Map<String, dynamic> map) {
+    return Patient(
+      id: map['_id'] as ObjectId?,
+      username: map['username'] ?? '',
+      password: map['password'] ?? '',
+      email: map['email'] ?? '',
+      contactNo: map['contactNo'] ?? '',
+      birthday: DateTime.parse(map['birthday']),
+      address: map['address'] ?? '',
+    );
   }
 }

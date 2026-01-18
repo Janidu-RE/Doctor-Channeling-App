@@ -5,6 +5,8 @@ import '../../data/services/mongo_database.dart';
 import '../../data/providers/user_provider.dart';
 import '../../data/models/Appointment.dart';
 import 'package:mongo_dart/mongo_dart.dart' as mongo;
+import '../../data/models/Doctor.dart';
+import '../booking/book_appointment_screen.dart';
 
 class MyAppointmentsScreen extends StatefulWidget {
   const MyAppointmentsScreen({super.key});
@@ -19,10 +21,30 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
     final user = Provider.of<UserProvider>(context, listen: false).user;
     if (user == null || user.id == null) return [];
     
-    // Find appointments for this patient
-    return await MongoDatabase.appointmentCollection.find(
-      mongo.where.eq('patientId', user.id).sortBy('date', descending: false)
+    // Find appointments for this patient, sorted by creation time (newest first)
+    final rawAppointments = await MongoDatabase.appointmentCollection.find(
+      mongo.where.eq('patientId', user.id).sortBy('_id', descending: true)
     ).toList();
+
+    List<Map<String, dynamic>> enrichedList = [];
+
+    for (var apptMap in rawAppointments) {
+      final appt = Appointment.fromMap(apptMap);
+      final doctorMap = await MongoDatabase.doctorCollection.findOne(mongo.where.id(appt.doctorId));
+      
+      Doctor? doctor;
+      if (doctorMap != null) {
+        doctor = Doctor.fromMap(doctorMap);
+      }
+
+      enrichedList.add({
+        'appointment': appt,
+        'doctor': doctor, // Store full object
+        'doctorName': doctor != null ? doctor.username : "Unknown"
+      });
+    }
+
+    return enrichedList;
   }
 
   Future<void> _cancelAppointment(mongo.ObjectId id) async {
@@ -42,7 +64,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
         future: _fetchAppointments(),
         builder: (context, AsyncSnapshot snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || (snapshot.data as List).isEmpty) {
             return const Center(child: Column(
@@ -55,13 +77,17 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
             ));
           }
   
-          final appointments = snapshot.data as List;
+          final enrichedData = snapshot.data as List<Map<String, dynamic>>;
   
           return ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: appointments.length,
+            itemCount: enrichedData.length,
             itemBuilder: (context, index) {
-              final appt = Appointment.fromMap(appointments[index]);
+              final item = enrichedData[index];
+              final appt = item['appointment'] as Appointment;
+              final doctorName = item['doctorName'] as String;
+              final doctor = item['doctor'] as Doctor?;
+
               final isPending = appt.status == 'pending';
               final isCancelled = appt.status == 'cancelled';
               
@@ -71,7 +97,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(15),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 5))
                   ]
                 ),
                 child: Padding(
@@ -83,7 +109,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
                           Container(
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
+                              color: Colors.blue.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(10)
                             ),
                             child: const Icon(Icons.medical_services, color: Colors.blue),
@@ -92,7 +118,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text("Dr. Consultation", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              Text("Dr. $doctorName", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                               Text(DateFormat('EEEE, d MMMM').format(appt.date), style: const TextStyle(color: Colors.grey)),
                             ],
                           ),
@@ -100,7 +126,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
                           Container(
                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                              decoration: BoxDecoration(
-                               color: isPending ? Colors.orange.withOpacity(0.2) : (isCancelled ? Colors.red.withOpacity(0.2) : Colors.green.withOpacity(0.2)),
+                               color: isPending ? Colors.orange.withValues(alpha: 0.2) : (isCancelled ? Colors.red.withValues(alpha: 0.2) : Colors.green.withValues(alpha: 0.2)),
                                borderRadius: BorderRadius.circular(20)
                              ),
                              child: Text(
@@ -126,10 +152,25 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
                             ],
                           ),
                           if (isPending)
-                            TextButton(
-                              onPressed: () => _cancelAppointment(appt.id!),
-                              style: TextButton.styleFrom(foregroundColor: Colors.red),
-                              child: const Text("Cancel"),
+                            Row(
+                              children: [
+                                TextButton(
+                                  onPressed: () {
+                                     // Navigate to reschedule
+                                     if (doctor != null) {
+                                         Navigator.push(context, MaterialPageRoute(builder: (_) => 
+                                           BookAppointmentScreen(doctor: doctor, appointmentId: appt.id!.oid)
+                                         ));
+                                     }
+                                  },
+                                  child: const Text("Reschedule"),
+                                ),
+                                TextButton(
+                                  onPressed: () => _cancelAppointment(appt.id!),
+                                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                  child: const Text("Cancel"),
+                                ),
+                              ],
                             )
                         ],
                       )

@@ -9,7 +9,9 @@ import '../../data/providers/user_provider.dart';
 
 class BookAppointmentScreen extends StatefulWidget {
   final Doctor doctor;
-  const BookAppointmentScreen({super.key, required this.doctor});
+  final String? appointmentId; // If provided, we are rescheduling
+  
+  const BookAppointmentScreen({super.key, required this.doctor, this.appointmentId});
 
   @override
   State<BookAppointmentScreen> createState() => _BookAppointmentScreenState();
@@ -17,13 +19,20 @@ class BookAppointmentScreen extends StatefulWidget {
 
 class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   DateTime _selectedDate = DateTime.now();
-  TimeOfDay? _selectedTime;
+  int _selectedSlotIndex = -1; // -1 means no selection
   bool _isLoading = false;
 
   final List<String> _timeSlots = [
     "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM",
     "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM", "04:00 PM"
   ];
+  
+  @override
+  void initState() {
+    super.initState();
+    // If rescheduling, we could technically pre-fill the old date/time 
+    // but starting fresh is often clearer for "picking a NEW time"
+  }
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -48,7 +57,7 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   }
 
   Future<void> _bookAppointment() async {
-    if (_selectedTime == null) {
+    if (_selectedSlotIndex == -1) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a time slot')));
       return;
     }
@@ -56,38 +65,76 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
     setState(() => _isLoading = true);
     try {
       final user = Provider.of<UserProvider>(context, listen: false).user;
-      if (user == null) throw Exception("User not logged in");
+      if (user == null) {
+        throw Exception("You must be logged in to book an appointment.");
+      }
+
+    if (MongoDatabase.appointmentCollection == null) {
+      throw Exception("Database not connected! Please restart the app.");
+    }
+    
+    if (widget.doctor.id == null) {
+       throw Exception("Doctor ID is invalid.");
+    }
+    
+    if (user.id == null) {
+       throw Exception("User ID is invalid. Please relogin.");
+    }
+
+      // Convert selected slot string to TimeOfDay
+      final timeStr = _timeSlots[_selectedSlotIndex];
+      final time = _parseTime(timeStr);
 
       final appointmentDate = DateTime(
         _selectedDate.year,
         _selectedDate.month,
         _selectedDate.day,
-        _selectedTime!.hour,
-        _selectedTime!.minute,
+        time.hour,
+        time.minute,
       );
 
-      final appointment = Appointment(
-        id: mongo.ObjectId(),
-        doctorId: widget.doctor.id!, 
-        patientId: user.id!,
-        date: appointmentDate,
-        status: 'pending',
-      );
+      if (widget.appointmentId != null) {
+         // RESCHEDULE MODE: Update existing
+         final id = mongo.ObjectId.fromHexString(widget.appointmentId!);
+         await MongoDatabase.appointmentCollection.update(
+           mongo.where.id(id),
+           mongo.modify.set('date', appointmentDate.toIso8601String())
+                       .set('status', 'pending') // Reset status to pending if it was something else?
+         );
+         print("Rescheduled to $appointmentDate");
+      } else {
+         // NEW BOOKING MODE
+          final appointment = Appointment(
+            id: mongo.ObjectId(),
+            doctorId: widget.doctor.id!, 
+            patientId: user.id!,
+            date: appointmentDate,
+            status: 'pending',
+          );
+    
+          print("Booking appointment: ${appointment.toMap()}"); // Debug print
+          await MongoDatabase.appointmentCollection.insert(appointment.toMap());
+      }
 
-      await MongoDatabase.appointmentCollection.insert(appointment.toMap());
 
       if (mounted) {
         showDialog(
-          context: context, 
+          context: context,
+          barrierDismissible: false,
           builder: (ctx) => AlertDialog(
             title: const Icon(Icons.check_circle, color: Colors.green, size: 50),
-            content: const Text("Appointment Booked Successfully!", textAlign: TextAlign.center),
+            content: Text(widget.appointmentId != null ? "Rescheduled Successfully!" : "Appointment Booked Successfully!", textAlign: TextAlign.center),
             actions: [
               TextButton(
                 onPressed: () {
-                  Navigator.pop(ctx);
-                  Navigator.pop(context); // Back to detail
-                  Navigator.pop(context); // Back to list/home
+                  Navigator.pop(ctx); // Close dialog
+                  Navigator.pop(context); // Close BookAppointmentScreen
+                  
+                  // If it's a new booking, we might want to pop again to go back to Home/Search
+                  // But if it's rescheduling, we want to stay in MyAppointmentsScreen to see the change
+                  if (widget.appointmentId == null) {
+                      Navigator.pop(context); // Back to list/search
+                  }
                 }, 
                 child: const Text("OK")
               )
@@ -95,10 +142,16 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
           )
         );
       }
-    } catch (e) {
+    } catch (e, stack) {
+      print("Booking Error: $e\n$stack");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Booking Failed: $e')),
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text("Booking Failed"),
+            content: Text(e.toString()),
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("OK"))],
+          )
         );
       }
     } finally {
@@ -107,17 +160,31 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   }
 
   TimeOfDay _parseTime(String timeStr) {
-    // Basic parser for "HH:mm AM/PM"
-    final format = DateFormat.jm(); // 5:08 PM
-    final dt = format.parse(timeStr); 
-    return TimeOfDay(hour: dt.hour, minute: dt.minute);
+    // Manually parse HH:mm AM/PM to avoid locale/format issues
+    try {
+      final parts = timeStr.split(' '); // ["09:00", "AM"]
+      final timeParts = parts[0].split(':'); // ["09", "00"]
+      
+      int hour = int.parse(timeParts[0]);
+      int minute = int.parse(timeParts[1]);
+      String period = parts[1]; // AM or PM
+
+      if (period == "PM" && hour != 12) hour += 12;
+      if (period == "AM" && hour == 12) hour = 0;
+
+      return TimeOfDay(hour: hour, minute: minute);
+    } catch (e) {
+      print("Error parsing time: $timeStr -> $e");
+      // Fallback
+      return const TimeOfDay(hour: 9, minute: 0);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Book Appointment"),
+        title: Text(widget.appointmentId != null ? "Reschedule Appointment" : "Book Appointment"),
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
@@ -168,24 +235,23 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
             Wrap(
               spacing: 15,
               runSpacing: 15,
-              children: _timeSlots.map((time) {
-                bool isSelected = _selectedTime?.format(context) == time;
-                // Note: comparing formatted strings is fragile but okay for simple list
-                // Better to compare TimeOfDay objects or indices
+              children: List.generate(_timeSlots.length, (index) {
+                final time = _timeSlots[index];
+                final isSelected = _selectedSlotIndex == index;
                 
                 return ChoiceChip(
                   label: Text(time),
-                  selected: _selectedTime?.format(context) ==  _simpleFormat(time), // hacky check
+                  selected: isSelected,
                   onSelected: (selected) {
                     setState(() {
-                         _selectedTime = _stringToTimeOfDay(time);
+                         _selectedSlotIndex = selected ? index : -1;
                     });
                   },
                   backgroundColor: Colors.white,
                   selectedColor: Colors.blue,
-                  labelStyle: TextStyle(color: _selectedTime == _stringToTimeOfDay(time) ? Colors.white : Colors.black),
+                  labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black),
                 );
-              }).toList(),
+              }),
             ),
             
             const SizedBox(height: 40),
@@ -201,7 +267,7 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                       ),
                       onPressed: _bookAppointment,
-                      child: const Text("Confirm Booking", style: TextStyle(fontSize: 18, color: Colors.white)),
+                      child: Text(widget.appointmentId != null ? "Confirm Reschedule" : "Confirm Booking", style: const TextStyle(fontSize: 18, color: Colors.white)),
                     ),
                   )
           ],
@@ -210,18 +276,8 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
     );
   }
   
-  TimeOfDay _stringToTimeOfDay(String s) {
-     final format = DateFormat.jm(); //"6:00 AM"
-     final dt = format.parse(s);
-     return TimeOfDay(hour: dt.hour, minute: dt.minute);
-  }
+
   
   // Helper to match the Chip selection logic
-  String _simpleFormat(String s) {
-      // Just return the string as we select based on strict string equality in UI for now
-      // But _selectedTime.format(context) might vary based on locale.
-      // Re-formatting the parsed time ensure consistency
-      final t = _stringToTimeOfDay(s);
-      return t.format(context);
-  }
+
 }

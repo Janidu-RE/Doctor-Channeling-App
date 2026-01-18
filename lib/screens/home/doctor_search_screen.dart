@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../data/services/mongo_database.dart';
+import '../../data/services/firebase_service.dart';
 import '../../data/models/Doctor.dart';
 import '../doctor/doctor_detail_screen.dart';
 
@@ -34,31 +34,7 @@ class _DoctorSearchScreenState extends State<DoctorSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Build Filter
-    final Map<String, dynamic> filter = {'role': 'doctor'};
-    
-    // Category Filter
-    if (_selectedCategory != "All") {
-      String pattern = _selectedCategory;
-      
-      // Robust mapping for common mismatches (e.g. Chip says "Cardiology", DB says "Cardiologist")
-      switch (_selectedCategory) {
-        case "Cardiology": pattern = "Cardio"; break;
-        case "Dermatology": pattern = "Derma"; break; // matches Dermatologist
-        case "Skin": pattern = "Skin|Derma"; break;
-        case "Eye": pattern = "Eye|Opth"; break; // Ophthalmologist
-        case "Neurology": pattern = "Neuro"; break;
-        case "Pediatric": pattern = "Pediat"; break;
-        case "General": pattern = "General"; break;
-      }
-      
-      filter['speciality'] = {r'$regex': pattern, r'$options': 'i'};
-    }
-
-    // Name Search Filter (Regex)
-    if (_searchQuery.isNotEmpty) {
-      filter['username'] = {r'$regex': _searchQuery, r'$options': 'i'};
-    }
+    // Filter logic is now handled in FirebaseService.getDoctors()
 
     return Scaffold(
       appBar: AppBar(
@@ -76,7 +52,7 @@ class _DoctorSearchScreenState extends State<DoctorSearchScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: "Search by doctor name...",
+                hintText: "Search doctor",
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchQuery.isNotEmpty 
                   ? IconButton(
@@ -143,9 +119,9 @@ class _DoctorSearchScreenState extends State<DoctorSearchScreen> {
 
           // Results List
           Expanded(
-            child: FutureBuilder(
-              future: MongoDatabase.doctorCollection.find(filter).toList(),
-              builder: (context, AsyncSnapshot snapshot) {
+            child: FutureBuilder<List<Doctor>>(
+              future: FirebaseService.getDoctors(category: _selectedCategory, query: _searchQuery),
+              builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -153,7 +129,7 @@ class _DoctorSearchScreenState extends State<DoctorSearchScreen> {
                   return Center(child: Text("Error: ${snapshot.error}"));
                 }
 
-                final doctorsData = snapshot.data as List;
+                final doctorsData = snapshot.data ?? [];
                 if (doctorsData.isEmpty) {
                   return Center(child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -169,7 +145,7 @@ class _DoctorSearchScreenState extends State<DoctorSearchScreen> {
                   padding: const EdgeInsets.all(16),
                   itemCount: doctorsData.length,
                   itemBuilder: (context, index) {
-                    final doc = Doctor.fromMap(doctorsData[index]);
+                    final doc = doctorsData[index];
                     return Card(
                       elevation: 0,
                       color: Colors.white,

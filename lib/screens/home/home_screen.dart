@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../data/providers/user_provider.dart';
-import '../../data/services/mongo_database.dart';
+import '../../data/services/firebase_service.dart';
+import '../../data/services/seeder_service.dart';
 import '../../data/models/Doctor.dart';
 import '../auth/login_screen.dart';
 import 'doctor_search_screen.dart';
@@ -18,6 +19,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed data if empty
+    SeederService.seedDoctors();
+  }
 
   final List<Widget> _screens = [
     const HomeDashboard(),
@@ -103,9 +111,9 @@ class HomeDashboard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("Medical Checkup", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                    const Text("Medical Checkup", style: TextStyle(color: Color(0xFF263238), fontSize: 20, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
-                    const Text("Check your health condition regularly to minimize disease.", style: TextStyle(color: Colors.white70)),
+                    const Text("Check your health condition regularly to minimize disease.", style: TextStyle(color: Color(0xFF455A64))),
                     const SizedBox(height: 15),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.blue),
@@ -122,7 +130,7 @@ class HomeDashboard extends StatelessWidget {
               // Search (Visual)
               TextField(
                 decoration: InputDecoration(
-                  hintText: "Search doctor or symptoms...",
+                  hintText: "Search doctor",
                   prefixIcon: const Icon(Icons.search),
                   filled: true,
                   fillColor: Colors.white,
@@ -166,16 +174,16 @@ class HomeDashboard extends StatelessWidget {
               const SizedBox(height: 10),
               
               // Doctor List Builder
-              FutureBuilder(
-                future: MongoDatabase.doctorCollection.find({'role': 'doctor'}).toList(),
-                builder: (context, AsyncSnapshot snapshot) {
+              FutureBuilder<List<Doctor>>(
+                future: FirebaseService.getDoctors(), // Fetch all or add limit logic in service if needed
+                builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                  if (!snapshot.hasData || (snapshot.data as List).isEmpty) return const Text("No doctors found.");
+                  if (!snapshot.hasData || snapshot.data!.isEmpty) return const Text("No doctors found.");
                   
-                  var docs = snapshot.data as List;
+                  var docs = snapshot.data!;
                   return Column(
-                    children: docs.take(3).map((d) {
-                      final doc = Doctor.fromMap(d);
+                    children: docs.take(3).map((doc) {
+                      // final doc = Doctor.fromMap(d); // Already Doctor object from service
                       return Card(
                          margin: const EdgeInsets.only(bottom: 15),
                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),

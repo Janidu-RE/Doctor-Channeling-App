@@ -1,4 +1,3 @@
-import 'package:mongo_dart/mongo_dart.dart';
 import 'User.dart';
 
 class Patient extends User {
@@ -26,7 +25,7 @@ class Patient extends User {
 
   factory Patient.fromMap(Map<String, dynamic> map) {
     return Patient(
-      id: map['_id'] as ObjectId?,
+      id: map['id'] ?? map['_id']?.toString(),
       username: map['username'] ?? '',
       password: map['password'] ?? '',
       email: map['email'] ?? '',

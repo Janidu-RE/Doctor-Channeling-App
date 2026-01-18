@@ -1,7 +1,5 @@
-import 'package:mongo_dart/mongo_dart.dart';
-
 class User {
-  ObjectId? id;
+  String? id;
   String username;
   String password;
   String email;
@@ -17,7 +15,7 @@ class User {
 
   Map<String, dynamic> toMap() {
     return {
-      '_id': id,
+      'id': id,
       'username': username,
       'password': password,
       'email': email,
@@ -27,7 +25,7 @@ class User {
 
   factory User.fromMap(Map<String, dynamic> map) {
     return User(
-      id: map['_id'] as ObjectId?,
+      id: map['id'] ?? map['_id']?.toString(), // Handle both if transitioning or just id
       username: map['username'] ?? '',
       password: map['password'] ?? '',
       email: map['email'] ?? '',

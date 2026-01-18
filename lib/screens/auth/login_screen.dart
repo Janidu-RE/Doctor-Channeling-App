@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:mongo_dart/mongo_dart.dart' as mongo;
-import '../../data/services/mongo_database.dart';
+import '../../data/services/firebase_service.dart';
 import '../../data/models/User.dart';
 import '../../data/providers/user_provider.dart';
 import '../home/home_screen.dart';
@@ -16,7 +15,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
 
@@ -24,15 +23,12 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
       try {
-        final username = _usernameController.text;
+        final email = _emailController.text.trim();
         final password = _passwordController.text;
 
-        final userMap = await MongoDatabase.userCollection.findOne(
-          mongo.where.eq('username', username).eq('password', password)
-        );
+        final user = await FirebaseService.loginUser(email, password);
 
-        if (userMap != null) {
-          final user = User.fromMap(userMap);
+        if (user != null) {
           if (mounted) {
             Provider.of<UserProvider>(context, listen: false).setUser(user);
             Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
@@ -112,14 +108,15 @@ class _LoginScreenState extends State<LoginScreen> {
                         const Text("Login", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.blue)),
                         const SizedBox(height: 30),
                         TextFormField(
-                          controller: _usernameController,
+                          controller: _emailController,
                           decoration: InputDecoration(
-                            labelText: 'Username',
-                            prefixIcon: const Icon(Icons.person_outline),
+                            labelText: 'Email',
+                            prefixIcon: const Icon(Icons.email_outlined),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
                             filled: true,
                             fillColor: Colors.grey[50]
                           ),
+                          keyboardType: TextInputType.emailAddress,
                           validator: (v) => v!.isEmpty ? 'Required' : null,
                         ),
                         const SizedBox(height: 20),

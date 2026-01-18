@@ -1,1 +1,0 @@
-@rpath/doctor_channeling_app.debug.dylib

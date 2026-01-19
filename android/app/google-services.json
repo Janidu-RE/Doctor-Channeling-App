@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "174448020381",
+    "firebase_url": "https://doctor-channeling-app-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "doctor-channeling-app",
+    "storage_bucket": "doctor-channeling-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:174448020381:android:592367dea0e3250a447d74",
+        "android_client_info": {
+          "package_name": "com.example.doctor_channeling_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAH33sA0isUnfAUng20qbAwZkg2NHrFL70"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
